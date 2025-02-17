@@ -1,0 +1,101 @@
+#include <FHT.h>
+#include <Wire.h>
+#include <MsTimer2.h>
+#include <LiquidCrystal_I2C.h>
+#include <Encoder.h>
+#include <EEPROM.h>
+#include <PT2313.h>
+#include <IRremote.h>
+
+#define IR_1 0x77E1BA6C
+#define IR_2 0x77E1B06C
+#define IR_3 0x77E1E06C
+#define IR_4 0x77E1106C
+#define IR_5 0x77E1406C
+
+#define AUTO_GAIN 1
+#define VOL_THR 35
+#define LOW_PASS 30
+#define DEF_GAIN 80
+#define FHT_N 128
+#define LOG_OUT 1
+
+IRrecv irrecv(12);
+decode_results ir;
+PT2313 pt;
+Encoder myEnc(10, 11);
+LiquidCrystal_I2C lcd(0x3F, 16, 2);
+
+unsigned long newPosition, oldPosition = -999;
+int vol, bass, treb, in, gain1, gain2, gain3, loud;
+int lr, rr, lf, rf;
+byte gain_sp = DEF_GAIN;
+
+void setup() {
+    Serial.begin(9600);
+    Wire.begin();
+    irrecv.enableIRIn();
+    lcd.begin();
+    lcd.backlight();
+    pinMode(A0, INPUT);
+    pinMode(8, INPUT);
+    pinMode(A1, INPUT);
+    MsTimer2::set(3, to_Timer);
+    MsTimer2::start();
+    
+    vol = EEPROM.read(0);
+    bass = EEPROM.read(1) - 7;
+    treb = EEPROM.read(2) - 7;
+    in = EEPROM.read(3);
+    gain1 = EEPROM.read(4);
+    gain2 = EEPROM.read(5);
+    gain3 = EEPROM.read(6);
+    loud = EEPROM.read(7);
+    lr = EEPROM.read(8);
+    rr = EEPROM.read(9);
+    lf = EEPROM.read(10);
+    rf = EEPROM.read(11);
+
+    if (in == 0) gain1;
+    else if (in == 1) gain2;
+    else gain3;
+    
+    lcd.setCursor(0, 0);
+    lcd.print("   HELLO    ");
+    delay(2000);
+    lcd.clear();
+    audio();
+}
+
+void to_Timer() {
+    newPosition = myEnc.read() / 4;
+}
+
+void loop() {
+    if (irrecv.decode(&ir)) {
+        Serial.print("0x");
+        Serial.println(ir.value, HEX);
+        irrecv.resume();
+    }
+    
+    if (newPosition != oldPosition) {
+        oldPosition = newPosition;
+        vol += newPosition;
+        myEnc.write(0);
+        newPosition = 0;
+        if (vol > 63) vol = 63;
+        if (vol < 0) vol = 0;
+        audio();
+    }
+}
+
+void audio() {
+    pt.setVolume(vol);
+    pt.setAttenuator((int8_t)lr);
+    pt.setAttenuator((int8_t)rr);
+    pt.setAttenuator((int8_t)lf);
+    pt.setAttenuator((int8_t)rf);
+    pt.setAudioSwitch(in, loud, gain1);
+    pt.setBass(bass);
+    pt.setTreble(treb);
+}
